@@ -1,8 +1,8 @@
-<?php
+<?php 
 /*
 Plugin Name: Restrição por CPF
-Description: Bloqueia o acesso a páginas e libera conteúdo após validação de CPF via API externa.
-Version: 1.7
+Description: Bloqueia o acesso a páginas e libera conteúdo após validação de CPF via My JSON Server e altera o cargo do usuário.
+Version: 1.9
 Author: Ygor Souza
 */
 
@@ -56,16 +56,16 @@ function rpc_render_pagina_restrita() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    mensagem.textContent = 'Acesso liberado!';
+                    mensagem.textContent = '✅ Acesso liberado!';
                     conteudo.style.display = 'block';
                 } else {
-                    mensagem.textContent = data.data || 'Erro ao validar CPF.';
+                    mensagem.textContent = data.data || '❌ Erro ao validar CPF.';
                 }
                 botao.disabled = false;  // Reabilita o botão após a resposta
             })
             .catch(error => {
                 console.error('Erro:', error);
-                mensagem.textContent = 'Erro de comunicação com o servidor.';
+                mensagem.textContent = '⚠️ Erro de comunicação com o servidor.';
                 botao.disabled = false;
             });
         });
@@ -74,7 +74,7 @@ function rpc_render_pagina_restrita() {
     return ob_get_clean();
 }
 
-// Lógica de validação via API externa
+// Lógica de validação via My JSON Server
 add_action('wp_ajax_rpc_validar_cpf', 'rpc_validar_cpf');
 add_action('wp_ajax_nopriv_rpc_validar_cpf', 'rpc_validar_cpf');
 
@@ -85,37 +85,45 @@ function rpc_validar_cpf() {
     }
 
     $cpf = sanitize_text_field($_POST['cpf']);
+    $user = wp_get_current_user(); // Pega o usuário logado
 
+    // URL do My JSON Server
+    $api_url = "https://my-json-server.typicode.com/ygor8632/restricao-por-cpf/cpfs?cpf={$cpf}";
 
-    $api_url = 'http://127.0.0.1:3000/validar-cpf';  
-    $api_key = ''; 
-
-    $response = wp_remote_post($api_url, [
-        'headers' => [
-            'Authorization' => "Bearer $api_key",  
-            'Content-Type'  => 'application/json',
-        ],
-        'body' => json_encode(['cpf' => $cpf]),
-    ]);
+    // Faz a requisição GET
+    $response = wp_remote_get($api_url);
 
     if (is_wp_error($response)) {
-        $error_message = $response->get_error_message(); 
-        error_log('Erro de comunicação com a API: ' . $error_message); 
-        wp_send_json_error('Erro de comunicação com a API: ' . $error_message);
+        $error_message = $response->get_error_message();
+        error_log('Erro de comunicação com a API: ' . $error_message);
+        wp_send_json_error('⚠️ Erro de comunicação com a API.');
     }
 
     $status_code = wp_remote_retrieve_response_code($response);
     $body = json_decode(wp_remote_retrieve_body($response), true);
 
-    error_log('Resposta da API: ' . print_r($body, true)); 
+    error_log('Resposta da API: ' . print_r($body, true));
 
-    if ($status_code === 200 && isset($body['valid'])) {
-        if ($body['valid']) {
-            wp_send_json_success(); 
+    if ($status_code === 200 && !empty($body)) {
+        // Verifica o campo 'status' retornado
+        $status = $body[0]['status'] ?? '';
+
+        if ($status === 'valid') {
+            // Atribui a função de "assinante"
+            if (is_user_logged_in()) {
+                $user_id = $user->ID;
+                $user_data = [
+                    'ID' => $user_id,
+                    'role' => 'subscriber' // Altere o cargo conforme necessário
+                ];
+                wp_update_user($user_data); // Atualiza o cargo do usuário
+            }
+
+            wp_send_json_success();
         } else {
-            wp_send_json_error('CPF não autorizado.');
+            wp_send_json_error('❌ CPF não autorizado.');
         }
     } else {
-        wp_send_json_error('Erro ao validar CPF. Código da resposta: ' . $status_code);
+        wp_send_json_error('❌ CPF não encontrado na base de dados.');
     }
 }

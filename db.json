@@ -1,6 +1,8 @@
 {
     "cpfs": [
         { "id": 1, "cpf": "12345678900", "status": "valid"},
+        { "id": 1, "cpf": "12345678901", "status": "valid"},
+        { "id": 1, "cpf": "12345678902", "status": "valid"},
         { "id": 2, "cpf": "98765432100", "status": "invalid"}
     ]
 }
